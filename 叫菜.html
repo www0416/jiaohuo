@@ -324,11 +324,12 @@ body { background: var(--bg); color: var(--text); font-family: 'Noto Sans TC', s
 </div>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbxBHKy_Y_1r8O89NJ1-QF7C1k0coHxAwp0p-GHVIH_yxx3PmUN_qNrGnfbOVDXPeRII/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbxvSqrU8o9PyyNW_RmccPR4Mrwa3fyv8b55s9l4HW_lyeSRNfTBEwlydbgSCIDJ4s-t/exec";
 const ADMIN_PWD = "0000";
 const CLAUDE_API = "https://api.anthropic.com/v1/messages";
 
 let DISH_MAP = {};
+let SAFE_STOCK = {}; // {食材名稱: 安全庫存量(克)}
 const STOCK_ITEMS = [
   {id:"st_garlic",  name:"蒜碎",   unit:"克"},
   {id:"st_garlicP", name:"蒜泥",   unit:"克"},
@@ -373,7 +374,10 @@ function fmt(v,u){ return u==="克"?v+"克":v+u; }
 async function loadSheetData(){
   try{
     const res=await fetch(API_URL);
-    const rows=await res.json();
+    const data=await res.json();
+    
+    // 解析配菜資料
+    const rows=data.dishes||data; // 兼容舊格式
     DISH_MAP={};
     rows.forEach(row=>{
       if(!row.dish)return;
@@ -384,6 +388,15 @@ async function loadSheetData(){
         supplier:row.supplier||"",role:row.role||"",
       });
     });
+
+    // 解析安全庫存
+    SAFE_STOCK={};
+    const safeRows=data.safeStock||[];
+    safeRows.forEach(row=>{
+      if(!row.name)return;
+      SAFE_STOCK[row.name]={amount:parseFloat(row.amount)||0,unit:row.unit||"克"};
+    });
+
     document.getElementById("loadingScreen").style.display="none";
     renderStock();renderVeg();renderRoast();
     ["main","home","soup","side"].forEach(p=>renderDishList(p));
@@ -672,11 +685,9 @@ function buildOrder(){
     });
   });
 
-  // 烤物（有排序）+ 從試算表讀取所有配方食材
+  // 烤物 → 完全依試算表食材輸出，不顯示品項名稱
   ROAST.forEach(item=>{
     const cnt=roastCnt[item.id]||0;if(!cnt)return;
-    const t=item.base*cnt;
-    sortedLines.push({sort:item.sort,text:`${item.name} ${Number.isInteger(t)?t:parseFloat(t.toFixed(1))}${item.unit}`});
     const ings=DISH_MAP[item.name]||[];
     ings.forEach(ing=>{
       const amt=ing.amount*cnt;
@@ -721,6 +732,15 @@ function buildOrder(){
   Object.entries(STOCK_NAMES).forEach(([stId,stName])=>{
     const stVal=stockVals[stId]||0;if(!stVal)return;
     Object.keys(vegNeedMap).forEach(k=>{if(k.startsWith(stName+"|"))vegNeedMap[k].total=Math.max(0,vegNeedMap[k].total-stVal);});
+  });
+
+  // 套用安全庫存（確保叫貨量不低於安全庫存）
+  Object.keys(vegNeedMap).forEach(k=>{
+    const ing=vegNeedMap[k];
+    const safe=SAFE_STOCK[ing.name];
+    if(safe && ing.unit===safe.unit){
+      ing.total=Math.max(ing.total, safe.amount);
+    }
   });
   Object.values(vegNeedMap).forEach(ing=>{if(ing.total<=0)return;const sp=ing.spec?`（${ing.spec}）`:"";unsortedLines.push(`${ing.name}${sp} ${fmt(ing.total,ing.unit)}`);});
   const comboByDish={};
