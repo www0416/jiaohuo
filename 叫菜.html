@@ -169,7 +169,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Noto Sans TC', s
 </div>
 
 <script>
-const API_URL = "https://script.google.com/macros/s/AKfycbwPtskU4_e9Ptdz3pcyZU_rd8ndXMPaevFrSYntjLIoIkowNsNS4hvUghIVD20reQYd/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbwBp7GMZslQocxm_cTLRVD4NbC6EiUHf3Ghc6mxHwniSnntL2CzG286bctghVS6JL9B/exec";
 
 let DISH_MAP = {};
 let SAFE_STOCK = {};
@@ -207,15 +207,19 @@ const ROAST = [
   {id:"r2",sort:8,name:"烤馬鈴薯",unit:"斤",base:3},
   {id:"r3",sort:9,name:"玉米",unit:"斤",base:3},
 ];
-const TAB_DEFS = {
-  main:{dishes:["薑汁燒肉","滷雞腿","打拋豬","滑蛋鮭","滑蛋蝦","滑蛋雞","滑蛋"]},
-  home:{dishes:["蘑菇烘蛋","九層塔烘蛋","節瓜烘蛋","蕃茄炒蛋","樹子水蓮","蒜香花椰","蒜香高麗菜","彩椒炒杏鮑菇","蔥爆牛","宮保雞胸","紅燒魚片","家常牛筋"]},
-  soup:{dishes:["味噌蔬菜湯"]},
-  side:{dishes:["蒲瓜玉米筍","青椒炒豆芽","鴻禧菇炒大黃瓜","青椒杏鮑菇","香菇蒲瓜","炒三絲","白花鴻禧菇","小黃瓜紅蘿蔔玉米筍","鹹蛋小黃瓜","麻油杏鮑菇","彩椒杏鮑菇","涼拌細海帶絲","炒大黃瓜","紅蘿蔔杏鮑菇","炒四季豆","炒金針菇2500","炒金針菇3200","涼拌海帶絲","炒豆芽","香菇白菜","金針絲瓜","薑汁杏鮑菇","照燒豆腐","毛豆玉米"]},
-};
-const ALL_DISHES = [...TAB_DEFS.main.dishes,...TAB_DEFS.home.dishes,...TAB_DEFS.soup.dishes,...TAB_DEFS.side.dishes];const HOME_SET = new Set(TAB_DEFS.home.dishes);
 
-let stockVals={},vegQty={},roastCnt={},mainSel={},homeSel={},soupSel={},sideSel={};
+// 動態從試算表讀取，初始為空
+let TAB_DEFS = {
+  main:{dishes:[]},
+  home:{dishes:[]},
+  soup:{dishes:[]},
+  side:{dishes:[]},
+};
+let HOME_SET = new Set();
+
+let stockVals={},vegQty={},roastCnt={};
+// dishSel[name] = {spec, count}
+let dishSel={};
 let weeklySet={};
 let step=1,currentTab='green';
 
@@ -240,7 +244,13 @@ async function loadSheetData(){
       });
     });
 
-    // 解析本週菜色（自動設定weeklySet）
+    // 從menuItems建立動態TAB_DEFS
+    const menuItems=data.menuItems||{};
+    TAB_DEFS={main:{dishes:[]},home:{dishes:[]},soup:{dishes:[]},side:{dishes:[]}};
+    Object.entries(menuItems).forEach(([name,prefix])=>{
+      if(TAB_DEFS[prefix]) TAB_DEFS[prefix].dishes.push(name);
+    });
+    HOME_SET=new Set(TAB_DEFS.home.dishes);
     weeklySet={};
     WEEKLY_RATIO={};
     const weeklyRows=data.weekly||[];
@@ -320,7 +330,7 @@ function setRoastCnt(id,n){roastCnt[id]=n;const card=document.getElementById("rc
 function clrRoast(id){roastCnt[id]=0;const card=document.getElementById("rc_"+id);if(card){card.className="roast-card";card.querySelectorAll(".btn-cnt").forEach(b=>b.className="btn-cnt");const s=document.getElementById("rsum_"+id);if(s)s.textContent="";}updBtn2();}
 
 // ===== 配菜 =====
-function getStore(p){return p==="main"?mainSel:p==="home"?homeSel:p==="soup"?soupSel:sideSel;}
+function getStore(p){ return dishSel; }
 function renderDishList(prefix){
   const c=document.getElementById(prefix+"List");if(!c)return;c.innerHTML="";
   const dishes=TAB_DEFS[prefix].dishes;
@@ -351,28 +361,54 @@ function renderDishList(prefix){
 }
 function menuHTML(id,badge,name,s,prefix,isWeek){
   const sp=["整倍","半倍"].map(v=>`<button class="btn-spec${s.spec===v?" active":""}" onclick="setSp('${prefix}','${id}','${v}')">${v}</button>`).join("");
-  const cnt=[1,2,3,4].map(n=>`<button class="btn-cnt${s.count===n?" active":""}" onclick="setCnt('${prefix}','${id}',${n})">${n}次</button>`).join("");
   const sum=s.spec&&s.count?`${s.spec}×${s.count}次`:"";
   const bdg=badge?`<span class="menu-id">${badge}</span>`:"";
   const wk=isWeek?`<span class="this-week">本週</span>`:"";
   const ratio=WEEKLY_RATIO[prefix+"_"+id]?`<span style="background:#e8f4e8;color:#2d6a2d;font-size:11px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:5px">${WEEKLY_RATIO[prefix+"_"+id]}</span>`:"";
-  return `<div class="menu-top"><div>${bdg}<span class="menu-name">${name}</span>${wk}${ratio}</div><span class="menu-sum" id="sum_${prefix}_${id}">${sum}</span></div>
-  <div class="row-lbl">規格</div><div class="btn-row">${sp}<button class="btn-clr" onclick="clrSel('${prefix}','${id}')">✕</button></div>
-  <div class="row-lbl">餐期次數</div><div class="btn-row">${cnt}</div>`;
+  const cnt=s.count||0;
+  return `<div class="menu-top"><div>${bdg}<span class="menu-name">${name}</span>${wk}${ratio}</div>
+    <span class="menu-sum" id="sum_${prefix}_${id}">${sum}</span></div>
+    <div class="row-lbl">規格</div><div class="btn-row">${sp}
+    <button class="btn-clr" onclick="clrSel('${prefix}','${id}')">✕</button></div>
+    <div class="row-lbl">餐期次數</div>
+    <div class="qty-ctrl" style="margin-top:4px">
+      <button class="qty-btn minus" onclick="chgCnt('${prefix}','${id}',-1)">−</button>
+      <input class="qty-num" type="number" min="1" value="${cnt||""}" placeholder="0"
+        oninput="setCntDirect('${prefix}','${id}',this.value)" inputmode="decimal">
+      <button class="qty-btn plus" onclick="chgCnt('${prefix}','${id}',1)">+</button>
+    </div>`;
 }
-function setSp(p,id,v){const s=getStore(p);if(!s[id])s[id]={};s[id].spec=v;refreshCard(p,id);updBtn2();}
-function setCnt(p,id,v){const s=getStore(p);if(!s[id])s[id]={};s[id].count=v;refreshCard(p,id);updBtn2();}
-function clrSel(p,id){getStore(p)[id]={};refreshCard(p,id);updBtn2();}
+function setSp(p,id,v){const s=dishSel;if(!s[id])s[id]={};s[id].spec=v;refreshCard(p,id);updBtn2();}
+function setCnt(p,id,v){const s=dishSel;if(!s[id])s[id]={};s[id].count=v;refreshCard(p,id);updBtn2();}
+function chgCnt(p,id,d){
+  const s=dishSel;if(!s[id])s[id]={};
+  s[id].count=Math.max(1,(s[id].count||0)+d);
+  const inp=document.querySelector(`#${p}_${id} .qty-num`);
+  if(inp)inp.value=s[id].count;
+  refreshCard(p,id);updBtn2();
+}
+function setCntDirect(p,id,v){
+  const s=dishSel;if(!s[id])s[id]={};
+  s[id].count=Math.max(1,parseInt(v)||1);
+  refreshCard(p,id);updBtn2();
+}
+function clrSel(p,id){dishSel[id]={};refreshCard(p,id);updBtn2();}
 function refreshCard(p,id){
   const card=document.getElementById(p+"_"+id);if(!card)return;
-  const s=getStore(p)[id]||{};
+  const s=dishSel[id]||{};
   card.className="menu-card"+(s.spec&&s.count?" selected":"");
-  const el=document.getElementById("sum_"+p+"_"+id);if(el)el.textContent=s.spec&&s.count?`${s.spec}×${s.count}次`:"";
+  const el=document.getElementById("sum_"+p+"_"+id);
+  if(el)el.textContent=s.spec&&s.count?`${s.spec}×${s.count}次`:"";
   card.querySelectorAll(".btn-spec").forEach((b,i)=>b.className="btn-spec"+([" active",""][["整倍","半倍"][i]===s.spec?0:1]));
-  card.querySelectorAll(".btn-cnt").forEach((b,i)=>b.className="btn-cnt"+(s.count===(i+1)?" active":""));
+  const inp=card.querySelector(".qty-num");
+  if(inp)inp.value=s.count||"";
 }
 function toggleCollapse(p){const w=document.getElementById("collapse_"+p);const a=document.getElementById("arrow_"+p);if(!w)return;const o=w.style.display!=="none";w.style.display=o?"none":"block";if(a)a.className="collapse-arrow"+(o?"":" open");}
-function hasAny2(){if(Object.values(vegQty).some(v=>v>0))return true;if(Object.values(roastCnt).some(v=>v>0))return true;return["main","home","soup","side"].some(p=>Object.values(getStore(p)).some(s=>s.spec&&s.count));}
+function hasAny2(){
+  if(Object.values(vegQty).some(v=>v>0))return true;
+  if(Object.values(roastCnt).some(v=>v>0))return true;
+  return Object.values(dishSel).some(s=>s.spec&&s.count);
+}
 function updBtn2(){const btn=document.getElementById("btnNext");if(!btn)return;const ok=hasAny2();btn.className="btn-next "+(ok?"on":"off");btn.textContent=ok?"產生叫貨單 →":"請選擇菜色";}
 function switchTab(tab){currentTab=tab;["green","main","home","soup","side"].forEach(t=>{document.getElementById("panel_"+t).className="section"+(t===tab?"":" hidden");document.getElementById("tab_"+t).className="tab"+(t===tab?" active":"");});}
 
@@ -417,13 +453,13 @@ function buildOrder(){
   // 主食、家常菜、湯、配菜
   function calcIng(prefix){
     TAB_DEFS[prefix].dishes.forEach(name=>{
-      const s=getStore(prefix)[name]||{};if(!s.spec||!s.count)return;
+      const s=dishSel[name]||{};if(!s.spec||!s.count)return;
       const ings=DISH_MAP[name]||[];if(!ings.length)return;
       const mult=s.spec==="整倍"?1:0.5;
       const isHome=HOME_SET.has(name);
       ings.forEach(ing=>{
         const amt=ing.amount*mult*s.count;
-        const amtPerServing=ing.amount*mult; // 組合包用單份量
+        const amtPerServing=ing.amount*mult;
         if(ing.supplier==="菜商"||ing.supplier===""){
           if(isHome||ing.role===""){
             const key=ing.name+"|"+ing.spec+"|"+ing.unit;
@@ -489,7 +525,7 @@ function prevStep(){
   window.scrollTo(0,0);
 }
 function resetAll(){
-  stockVals={};vegQty={};roastCnt={};mainSel={};homeSel={};soupSel={};sideSel={};step=1;
+  stockVals={};vegQty={};roastCnt={};dishSel={};step=1;
   renderStock();renderVeg();renderRoast();["main","home","soup","side"].forEach(p=>renderDishList(p));
   document.getElementById("step3").classList.add("hidden");document.getElementById("step2").classList.add("hidden");document.getElementById("step1").classList.remove("hidden");
   document.getElementById("stepLabel").textContent="步驟 1／3 — 填入現有庫存";document.getElementById("progressFill").style.width="33%";
